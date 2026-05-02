@@ -2,13 +2,7 @@
 
 A minimal CLI tool that generates images from text prompts via the [FAL API](https://fal.ai). Pipe a prompt in, get an image out.
 
-```bash
-echo "a sunset over Dublin Bay" | generate-image sunset
-# -> writes sunset.jpg
-
-cat prompt.txt | generate-image --preview poster
-# -> writes poster.jpg and opens it
-```
+<img width="100%" alt="Terminal example" src="https://github.com/user-attachments/assets/de7740f5-4735-47d2-a943-e481b3b9c343" />
 
 ## Quickstart
 
