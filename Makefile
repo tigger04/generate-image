@@ -27,8 +27,13 @@ CONF_DIR := $(HOME)/.config/generate-image
 install: build
 	mkdir -p $(INSTALL_DIR) $(CONF_DIR)
 	cp $(BINARY) $(INSTALL_DIR)/$(BINARY)
-	cp .env $(CONF_DIR)/.env
 	cp config.yaml $(CONF_DIR)/config.yaml
+	@if [ -f .env ]; then \
+		cp .env $(CONF_DIR)/.env; \
+	elif [ ! -f $(CONF_DIR)/.env ]; then \
+		cp .env.example $(CONF_DIR)/.env; \
+		echo "Created $(CONF_DIR)/.env from template -- edit it to add your FAL_KEY"; \
+	fi
 
 uninstall:
 	trash -- $(INSTALL_DIR)/$(BINARY) $(CONF_DIR)
