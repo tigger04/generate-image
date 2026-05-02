@@ -529,8 +529,7 @@ func TestCLI_no_cost_when_unavailable_RT1_14(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "out.png")
 	_, stderr, _ := runBinary(t, linkPath, []string{outFile}, "a red cat", []string{"FAL_BASE_URL=" + server.URL})
 
-	lower := strings.ToLower(stderr)
-	if strings.Contains(lower, "cost") {
+	if strings.Contains(stderr, "Cost:") {
 		t.Errorf("Expected no cost line on stderr when pricing unavailable, got: %q", stderr)
 	}
 }

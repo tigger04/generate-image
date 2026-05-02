@@ -184,15 +184,21 @@ func run() int {
 	}
 
 	// Write image to disk, handling extension and format conversion.
-	outputPath, err = writeImage(imageData, contentType, outputPath)
+	result, err := writeImage(imageData, contentType, outputPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
+	outputPath = result.Path
 
-	// Fetch and report pricing (unless --quiet).
+	// Report status (unless --quiet).
 	if !quiet {
 		reportCost(client, baseURL, cfg.Model, falKey)
+		if result.Converted {
+			fmt.Fprintf(os.Stderr, "Wrote %s (converted %s to %s)\n", result.Path, result.FromFmt, result.ToFmt)
+		} else {
+			fmt.Fprintf(os.Stderr, "Wrote %s\n", result.Path)
+		}
 	}
 
 	// Preview the image if requested.
@@ -321,7 +327,15 @@ func loadFALKey(path string) (string, error) {
 // - Matching extension: writes as-is
 // - Mismatched extension: converts via ImageMagick or returns an error
 // Returns the final output path (which may differ from the input).
-func writeImage(imageData []byte, contentType string, outputPath string) (string, error) {
+// writeResult holds the outcome of writeImage for status reporting.
+type writeResult struct {
+	Path      string
+	Converted bool
+	FromFmt   string
+	ToFmt     string
+}
+
+func writeImage(imageData []byte, contentType string, outputPath string) (*writeResult, error) {
 	apiExt := extFromContentType(contentType)
 	userExt := filepath.Ext(outputPath)
 
@@ -331,16 +345,21 @@ func writeImage(imageData []byte, contentType string, outputPath string) (string
 
 	if userExt == "" || strings.EqualFold(userExt, apiExt) {
 		if err := os.WriteFile(outputPath, imageData, 0644); err != nil {
-			return "", fmt.Errorf("writing output file: %w", err)
+			return nil, fmt.Errorf("writing output file: %w", err)
 		}
-		return outputPath, nil
+		return &writeResult{Path: outputPath}, nil
 	}
 
 	// Mismatched extension -- try to convert with magick.
 	if err := convertWithMagick(imageData, apiExt, outputPath); err != nil {
-		return "", err
+		return nil, err
 	}
-	return outputPath, nil
+	return &writeResult{
+		Path:      outputPath,
+		Converted: true,
+		FromFmt:   strings.TrimPrefix(apiExt, "."),
+		ToFmt:     strings.TrimPrefix(userExt, "."),
+	}, nil
 }
 
 // extFromContentType maps a Content-Type to a file extension (with dot).
