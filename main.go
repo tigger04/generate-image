@@ -213,6 +213,9 @@ func run() int {
 	// Preview the image if requested.
 	if preview {
 		cmd := exec.Command("sh", "-c", previewCmd+" \"$1\"", "--", outputPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
 		if err := cmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error running preview command: %v\n", err)
 			return 1

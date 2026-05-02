@@ -29,13 +29,7 @@ install: build
 	cp $(BINARY) $(INSTALL_DIR)/$(BINARY)
 	@if [ ! -f $(CONF_DIR)/config.yaml ]; then \
 		cp config.yaml $(CONF_DIR)/config.yaml; \
-		echo "Created $(CONF_DIR)/config.yaml from template"; \
-	fi
-	@if [ -f .env ]; then \
-		cp .env $(CONF_DIR)/.env; \
-	elif [ ! -f $(CONF_DIR)/.env ]; then \
-		cp .env.example $(CONF_DIR)/.env; \
-		echo "Created $(CONF_DIR)/.env from template -- edit it to add your FAL_KEY"; \
+		echo "Created $(CONF_DIR)/config.yaml -- edit to configure API key and model"; \
 	fi
 
 uninstall:
