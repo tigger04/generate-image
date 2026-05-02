@@ -40,6 +40,10 @@ uninstall:
 
 sync:
 	git add --all
-	git commit
+	@if git diff --cached --quiet; then \
+		echo "Nothing to commit"; \
+	else \
+		git commit; \
+	fi
 	git pull
 	git push
