@@ -1,4 +1,4 @@
-module github.com/tadg-paul/generate-image
+module github.com/tadg-paul/pix
 
 go 1.24.2
 toolchain go1.26.2

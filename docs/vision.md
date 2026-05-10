@@ -1,28 +1,27 @@
-<!-- Version: 0.2 | Last updated: 2026-05-03 -->
+<!-- Version: 0.3 | Last updated: 2026-05-10 -->
 
 # Vision
 
 ## The Holy Grail
 
-A useful cli and maybe gui to let you create and edit images, using generateive AI models, that will run locally on your device. Dream on.
+A useful CLI (and maybe GUI) to let you create and edit images using generative AI models, running locally on your device. Dream on.
 
 ## And back down to earth ...
 
-`generate-image` is a minimal CLI tool that generates images from text prompts via the [FAL API](https://fal.ai). It reads a prompt from stdin, sends it to a configurable model, and writes the resulting image to disk.
+`pix` is a minimal CLI tool that interacts with the [FAL API](https://fal.ai) for image-related operations. It is built around subcommands so that distinct operations remain discoverable and individually testable as the tool grows.
 
 ```bash
-echo "a sunset over Dublin Bay" | generate-image sunset
-cat description.txt | generate-image --preview poster
+echo "a sunset over Dublin Bay" | pix gen-img sunset
+cat description.txt | pix gen-img --preview poster
+pix cost
 ```
-
-The first argument is the output filename. An extension is optional -- if omitted, the API response format is used.
 
 ## Goals
 
-- **Single responsibility:** one prompt in, one image out.
+- **Subcommand-based:** every distinct operation is its own subcommand. New features extend the surface, they don't bloat existing commands.
 - **Zero friction:** `make install` places the binary on `PATH`; a YAML config file is the only setup.
-- **Pipeline-friendly:** reads stdin, writes a file, reports status to stderr. No interactive prompts.
-- **Cost-aware:** reports generation cost to stderr when the FAL pricing API has data.
+- **Pipeline-friendly:** reads stdin, writes files, reports status to stderr. No interactive prompts.
+- **Cost-aware:** reports generation cost when the FAL pricing API has data; standalone cost lookup via `pix cost`.
 
 ## Non-goals (for now)
 
@@ -31,16 +30,23 @@ The first argument is the output filename. An extension is optional -- if omitte
 - Video generation.
 - Provider abstraction (FAL is the only backend).
 
-## How it works
+## Subcommands
 
-1. The tool takes an output filename as its argument. Flags (`--quiet`, `--dry-run`, `--preview`) are optional.
-2. It reads the text prompt from stdin.
-3. It resolves the FAL API key via a priority chain: `FAL_KEY` env var, config command, config file, `.env` fallback.
-4. It reads the model from `config.yaml`.
-5. It calls the FAL API with the configured model and prompt.
-6. It downloads the resulting image and writes it to the output path, handling extension detection and format conversion via ImageMagick if needed.
-7. It reports cost to stderr (unless `--quiet`).
-8. If `--preview` is specified, it opens the image in the configured viewer.
+### `pix gen-img <output>`
+
+Reads a text prompt from stdin and generates an image via the FAL API. Writes the result to `<output>` (extension optional -- if omitted, the API response format is used).
+
+### `pix cost`
+
+Queries pricing for the configured model without generating an image. Reports both the unit price and a historical estimate based on past usage.
+
+## Flag system
+
+**Global flags** (placed before the subcommand): `--quiet` / `-q`, `--version`, `--help` / `-h` (top-level).
+
+**Subcommand flags** (placed after the subcommand): `--dry-run`, `--preview` / `-p` (gen-img only), `--help` / `-h` (subcommand-specific).
+
+`--help` is mutually exclusive with all other flags and arguments.
 
 ## Configuration
 
@@ -57,7 +63,7 @@ api-keys:
 preview-command: chafa
 ```
 
-The config file lives at `~/.config/generate-image/config.yaml`, with fallback to the binary directory for development.
+The config file lives at `~/.config/pix/config.yaml`, with fallback to the binary directory for development.
 
 ### API key resolution priority
 
@@ -71,7 +77,7 @@ The config file lives at `~/.config/generate-image/config.yaml`, with fallback t
 - **Language:** Go 1.22+
 - **Dependencies:** `gopkg.in/yaml.v3` (config parsing). Standard library for everything else.
 - **Optional:** ImageMagick (`magick`) for format conversion
-- **Installation:** `make install` copies the binary to `~/.local/bin/generate-image`
+- **Installation:** `make install` copies the binary to `~/.local/bin/pix`
 
 ## Licence
 

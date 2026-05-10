@@ -1,6 +1,6 @@
-# generate-image
+# pix
 
-A minimal CLI tool that generates images from text prompts via the [FAL API](https://fal.ai). Pipe a prompt in, get an image out.
+A minimal CLI for generating and pricing images via the [FAL API](https://fal.ai). Pipe a prompt in, get an image out.
 
 <img width="100%" alt="Terminal example" src="https://github.com/user-attachments/assets/de7740f5-4735-47d2-a943-e481b3b9c343" />
 
@@ -15,26 +15,26 @@ A minimal CLI tool that generates images from text prompts via the [FAL API](htt
 ### Install
 
 ```bash
-git clone https://github.com/tadg-paul/generate-image.git
-cd generate-image
+git clone https://github.com/tadg-paul/pix.git
+cd pix
 make install
 ```
 
-This compiles the binary to `~/.local/bin/generate-image` and creates `~/.config/generate-image/config.yaml` from the template. Edit it to configure the API key and model -- see [Configuration](#configuration).
+This compiles the binary to `~/.local/bin/pix` and creates `~/.config/pix/config.yaml` from the template. Edit it to configure the API key and model -- see [Configuration](#configuration).
 
 ### Usage
 
 ```bash
-> echo "a red cat sitting on a wall" | generate-image cat
+> echo "a red cat sitting on a wall" | pix gen-img cat
 Cost: $0.02 (unit: images) for model xai/grok-imagine-image (source: FAL API)
 Wrote cat.jpg
 
-> echo "a blueprint" | generate-image blueprint.png
+> echo "a blueprint" | pix gen-img blueprint.png
 # API returns JPEG, converted to PNG via magick:
 Cost: $0.02 (unit: images) for model xai/grok-imagine-image (source: FAL API)
 Wrote blueprint.png (converted jpg to png)
 
-> echo "test prompt" | generate-image --dry-run test
+> echo "test prompt" | pix gen-img --dry-run test
 POST https://fal.run/xai/grok-imagine-image
 {
   "prompt": "test prompt"
@@ -42,23 +42,46 @@ POST https://fal.run/xai/grok-imagine-image
 Output: test
 (dry run -- no API call made)
 
-> echo "A spoon eating a man wearing a hat" | generate-image -q -p landscape
+> echo "A spoon eating a man wearing a hat" | pix --quiet gen-img -p landscape
 # generates quietly, opens in default viewer (or preview-command from config)
+
+> pix cost
+Model: xai/grok-imagine-image
+Unit price: $0.02 per images (source: FAL API)
+Estimated cost: $0.0200 per call based on usage history (source: FAL API)
 ```
 
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `gen-img <output>` | Generate an image from a prompt on stdin |
+| `cost` | Query pricing for the configured model (no generation) |
+
+Run `pix <subcommand> --help` for subcommand-specific usage.
+
 ### Flags
+
+**Global flags** (placed before the subcommand):
 
 | Flag | Description |
 |------|-------------|
 | `-h`, `--help` | Show usage |
 | `--version` | Show version |
-| `-q`, `--quiet` | Suppress cost output |
-| `--dry-run` | Print what would happen without calling the API |
-| `-p`, `--preview` | Open the image after generation |
+| `-q`, `--quiet` | Suppress non-error output |
+
+**Subcommand flags** (placed after the subcommand):
+
+| Flag | Subcommand | Description |
+|------|------------|-------------|
+| `--dry-run` | gen-img, cost | Show what would happen without calling the API |
+| `-p`, `--preview` | gen-img | Open the image after generation |
+
+`--help` is mutually exclusive with all other flags and arguments.
 
 ## Configuration
 
-Configuration lives at `~/.config/generate-image/config.yaml` (or next to the binary during development).
+Configuration lives at `~/.config/pix/config.yaml` (or next to the binary during development).
 
 ```yaml
 # Model to use for image generation
@@ -98,10 +121,14 @@ If no file extension is provided, the API response format is used (typically `.j
 
 | File | Purpose |
 |------|---------|
-| `main.go` | Single-file CLI entry point (~500 lines) |
+| `main.go` | CLI entry point and subcommand dispatch |
+| `genimg.go` | gen-img subcommand handler |
+| `cost.go` | cost subcommand handler |
+| `config.go` | Config loading and API key resolution |
+| `fal.go` | FAL API HTTP client helpers |
 | `config.yaml` | Default model configuration |
 | `Makefile` | Build, test, install, lint targets |
-| `tests/regression/` | Regression test suite (30 tests) |
+| `tests/regression/` | Regression test suite (54 tests) |
 | `tests/one_off/` | One-off tests |
 
 ## Development
@@ -116,4 +143,4 @@ All regression tests use local HTTP test servers -- no real API calls, no API ke
 
 ## Licence
 
-MIT -- Copyright Taḋg Paul
+MIT -- Copyright Tadg Paul

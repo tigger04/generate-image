@@ -1,7 +1,7 @@
-# ABOUTME: Build, test, lint, and install targets for generate-image CLI.
+# ABOUTME: Build, test, lint, and install targets for pix CLI.
 # ABOUTME: Standard entry points per CLAUDE.md §10.
 
-BINARY := generate-image
+BINARY := pix
 INSTALL_DIR := $(HOME)/.local/bin
 
 .PHONY: build lint test test-one-off install uninstall sync
@@ -22,7 +22,7 @@ else
 	go test ./tests/one_off/ -v -count=1
 endif
 
-CONF_DIR := $(HOME)/.config/generate-image
+CONF_DIR := $(HOME)/.config/pix
 
 install: build
 	mkdir -p $(INSTALL_DIR) $(CONF_DIR)
