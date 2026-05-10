@@ -1319,7 +1319,7 @@ func TestPix_unknown_subcommand_RT5_14(t *testing.T) {
 }
 
 // RT-5.15: pix gen-img --help prints gen-img-specific usage line.
-// Asserts on "Usage: pix gen-img" which the top-level usage does not contain.
+// Asserts on "Usage: pix generate-image" which the top-level usage does not contain.
 func TestPix_genimg_help_RT5_15(t *testing.T) {
 	bin := buildBinary(t)
 	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/grok-2-aurora\n")
@@ -1329,8 +1329,8 @@ func TestPix_genimg_help_RT5_15(t *testing.T) {
 	if exitCode != 0 {
 		t.Errorf("Expected exit code 0 for gen-img --help, got %d", exitCode)
 	}
-	if !strings.Contains(stderr, "Usage: pix gen-img") {
-		t.Errorf("Expected gen-img-specific usage line 'Usage: pix gen-img', got: %q", stderr)
+	if !strings.Contains(stderr, "Usage: pix generate-image") {
+		t.Errorf("Expected gen-img-specific usage line 'Usage: pix generate-image', got: %q", stderr)
 	}
 }
 
@@ -1360,7 +1360,7 @@ func TestPix_genimg_help_short_RT5_17(t *testing.T) {
 	if exitCode != 0 {
 		t.Errorf("Expected exit code 0 for gen-img -h, got %d", exitCode)
 	}
-	if !strings.Contains(stderr, "Usage: pix gen-img") {
+	if !strings.Contains(stderr, "Usage: pix generate-image") {
 		t.Errorf("Expected gen-img-specific usage, got: %q", stderr)
 	}
 }
@@ -1451,7 +1451,7 @@ func TestPix_genimg_help_exclusive_RT5_21(t *testing.T) {
 	if apiCalled {
 		t.Errorf("API should not be called when --help is present")
 	}
-	if !strings.Contains(stderr, "Usage: pix gen-img") {
+	if !strings.Contains(stderr, "Usage: pix generate-image") {
 		t.Errorf("Expected gen-img usage in error output, got: %q", stderr)
 	}
 	if _, err := os.Stat(outFile); err == nil {

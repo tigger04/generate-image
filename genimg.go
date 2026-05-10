@@ -21,9 +21,9 @@ import (
 const maxRefImages = 3
 
 func printGenImgUsage() {
-	fmt.Fprintln(os.Stderr, "Usage: pix gen-img [flags] [reference-images...] <output-file>")
+	fmt.Fprintln(os.Stderr, "Usage: pix generate-image [flags] [reference-images...] <output-file>")
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "'gen-img' is an alias for the full subcommand name 'generate-image'.")
+	fmt.Fprintln(os.Stderr, "Alias: gen-img")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Reads a text prompt from stdin and generates an image via the FAL API.")
 	fmt.Fprintln(os.Stderr, "")
