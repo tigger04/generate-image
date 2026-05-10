@@ -1923,3 +1923,172 @@ func TestGenImg_full_name_alias_RT4_15(t *testing.T) {
 		t.Errorf("Expected output file from 'generate-image' alias, got: %v", err)
 	}
 }
+
+// RT-7.1: edit-image with one reference image dispatches and succeeds.
+// User action: runs "echo 'make blue' | pix edit-image photo.png out.png".
+// User observes: image written, no error.
+func TestEditImg_one_ref_succeeds_RT7_1(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/grok-2-aurora\n")
+
+	refDir := t.TempDir()
+	refPath := writeRefImage(t, refDir, "ref.png", fakeImagePNG)
+
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPI(t, successHandler(t, imageServer, nil), nil)
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	_, stderr, exitCode := runBinary(t, binPath, []string{"edit-image", refPath, outFile}, "make blue", []string{"FAL_BASE_URL=" + server.URL})
+
+	if exitCode != 0 {
+		t.Errorf("Expected exit 0 for edit-image with one ref, got %d; stderr: %s", exitCode, stderr)
+	}
+	if _, err := os.Stat(outFile); err != nil {
+		t.Errorf("Expected output file from edit-image, got: %v", err)
+	}
+}
+
+// RT-7.2: edit-image with no positional arguments exits non-zero with usage.
+// User action: types "pix edit-image" with no args.
+// User observes: usage text on stderr, non-zero exit.
+func TestEditImg_no_positionals_exits_nonzero_RT7_2(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/grok-2-aurora\n")
+
+	_, stderr, exitCode := runBinary(t, binPath, []string{"edit-image"}, "", nil)
+
+	if exitCode == 0 {
+		t.Errorf("Expected non-zero exit code for edit-image with no args, got 0")
+	}
+	if !strings.Contains(strings.ToLower(stderr), "usage") {
+		t.Errorf("Expected usage on stderr, got: %q", stderr)
+	}
+}
+
+// RT-7.3: edit-image with only an output positional (no refs) exits non-zero
+// with an error explaining a reference image is required.
+// User action: runs "echo 'edit' | pix edit-image out.png" without supplying a reference.
+// User observes: error stating a reference image is required, non-zero exit.
+func TestEditImg_no_refs_exits_nonzero_RT7_3(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/grok-2-aurora\n")
+
+	_, stderr, exitCode := runBinary(t, binPath, []string{"edit-image", "out.png"}, "edit", nil)
+
+	if exitCode == 0 {
+		t.Errorf("Expected non-zero exit code for edit-image without refs, got 0; stderr: %s", stderr)
+	}
+	lower := strings.ToLower(stderr)
+	if !strings.Contains(lower, "reference image") {
+		t.Errorf("Expected error mentioning reference image requirement, got: %q", stderr)
+	}
+}
+
+// RT-7.4: edit-image with one ref calls FAL's /edit endpoint.
+// User action: runs "echo 'edit' | pix edit-image photo.png out.png".
+// User observes: image written; under the hood the /edit endpoint is invoked.
+func TestEditImg_calls_edit_endpoint_RT7_4(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/grok-2-aurora\n")
+
+	refDir := t.TempDir()
+	refPath := writeRefImage(t, refDir, "ref.png", fakeImagePNG)
+
+	var capturedPath string
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		resp := map[string]interface{}{
+			"images": []map[string]interface{}{
+				{"url": imageServer.URL + "/image.png"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}, nil)
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	runBinary(t, binPath, []string{"edit-image", refPath, outFile}, "edit", []string{"FAL_BASE_URL=" + server.URL})
+
+	if !strings.HasSuffix(capturedPath, "/edit") {
+		t.Errorf("Expected request path to end with /edit, got: %q", capturedPath)
+	}
+}
+
+// RT-7.5: edit-image with three reference images sends three image_urls.
+// User action: runs "pix edit-image a.png b.png c.png merged.png".
+// User observes: image written; payload contains three image_urls entries.
+func TestEditImg_three_refs_RT7_5(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/grok-2-aurora\n")
+
+	refDir := t.TempDir()
+	r1 := writeRefImage(t, refDir, "a.png", fakeImagePNG)
+	r2 := writeRefImage(t, refDir, "b.png", fakeImagePNG)
+	r3 := writeRefImage(t, refDir, "c.png", fakeImagePNG)
+
+	var capturedBody string
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPI(t, successHandler(t, imageServer, &capturedBody), nil)
+
+	outFile := filepath.Join(t.TempDir(), "merged.png")
+	_, stderr, exitCode := runBinary(t, binPath, []string{"edit-image", r1, r2, r3, outFile}, "merge", []string{"FAL_BASE_URL=" + server.URL})
+
+	if exitCode != 0 {
+		t.Fatalf("Expected exit 0, got %d; stderr: %s", exitCode, stderr)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(capturedBody), &parsed); err != nil {
+		t.Fatalf("Failed to parse request body: %v", err)
+	}
+	urls, ok := parsed["image_urls"].([]interface{})
+	if !ok || len(urls) != 3 {
+		t.Fatalf("Expected 3 image_urls, got: %v", parsed["image_urls"])
+	}
+}
+
+// RT-7.6: edit-image with more than the maximum (3) reference images exits non-zero.
+// User action: runs "pix edit-image a.png b.png c.png d.png out.png".
+// User observes: error stating max ref images exceeded, non-zero exit.
+func TestEditImg_too_many_refs_RT7_6(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/grok-2-aurora\n")
+
+	refDir := t.TempDir()
+	r1 := writeRefImage(t, refDir, "a.png", fakeImagePNG)
+	r2 := writeRefImage(t, refDir, "b.png", fakeImagePNG)
+	r3 := writeRefImage(t, refDir, "c.png", fakeImagePNG)
+	r4 := writeRefImage(t, refDir, "d.png", fakeImagePNG)
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	_, stderr, exitCode := runBinary(t, binPath, []string{"edit-image", r1, r2, r3, r4, outFile}, "edit", nil)
+
+	if exitCode == 0 {
+		t.Errorf("Expected non-zero exit for too many refs, got 0; stderr: %s", stderr)
+	}
+	lower := strings.ToLower(stderr)
+	if !strings.Contains(lower, "maximum") && !strings.Contains(lower, "too many") {
+		t.Errorf("Expected error about exceeding max reference images, got: %q", stderr)
+	}
+}
+
+// RT-7.7: edit-image --help prints usage that mentions reference image as required.
+// User action: runs "pix edit-image --help".
+// User observes: usage text noting that a reference image is required.
+func TestEditImg_help_text_mentions_required_ref_RT7_7(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/grok-2-aurora\n")
+
+	_, stderr, exitCode := runBinary(t, binPath, []string{"edit-image", "--help"}, "", nil)
+
+	if exitCode != 0 {
+		t.Errorf("Expected exit 0 for --help, got %d", exitCode)
+	}
+	lower := strings.ToLower(stderr)
+	if !strings.Contains(lower, "reference image") {
+		t.Errorf("Expected --help to mention reference image, got: %q", stderr)
+	}
+	if !strings.Contains(lower, "required") {
+		t.Errorf("Expected --help to mention reference image is required, got: %q", stderr)
+	}
+}

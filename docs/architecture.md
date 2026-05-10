@@ -1,4 +1,4 @@
-<!-- Version: 0.2 | Last updated: 2026-05-10 -->
+<!-- Version: 0.3 | Last updated: 2026-05-10 -->
 
 # Architecture
 
@@ -15,9 +15,9 @@ stdin (prompt)─────►│                │─► FAL API ─► imag
 config.yaml ───────►│                │─► preview command ─► image viewer
                     └────────────────┘
                           │
-                    ┌─────┴─────┐
-                    │           │
-                gen-img       cost
+                    ┌─────┴─────┬─────────────┐
+                    │           │             │
+            generate-image  edit-image       cost
 ```
 
 ### File layout
@@ -27,7 +27,7 @@ All code lives in package `main` at the project root.
 | File | Purpose |
 |------|---------|
 | `main.go` | Entry point, global flag parsing, subcommand dispatch |
-| `genimg.go` | `pix gen-img` handler -- generates images from prompts |
+| `genimg.go` | `pix generate-image` and `pix edit-image` handler (alias `gen-img`) -- generates or edits images from prompts |
 | `cost.go` | `pix cost` handler -- queries pricing without generation |
 | `config.go` | `config.yaml` loading, API key resolution, config directory resolution |
 | `fal.go` | FAL API HTTP helpers (generation, pricing, historical estimate) |
@@ -36,7 +36,8 @@ All code lives in package `main` at the project root.
 
 | Subcommand | Purpose |
 |------------|---------|
-| `gen-img <output>` | Reads prompt from stdin, writes image to disk |
+| `generate-image <output>` | Generate a new image from a prompt on stdin. Also accepts optional reference images as earlier positionals (in which case it edits). Alias: `gen-img`. |
+| `edit-image <refs...> <output>` | Same pipeline as `generate-image`, but requires at least one reference image. Provides FAL-sandbox-style discovery for the edit workflow. |
 | `cost` | Queries pricing for configured model |
 
 Each subcommand parses its own flags, including a subcommand-specific `--help` / `-h` and `--dry-run` (where applicable).
@@ -46,7 +47,7 @@ Each subcommand parses its own flags, including a subcommand-specific `--help` /
 Two categories enforced strictly:
 
 - **Global flags** (must be placed before the subcommand): `--quiet` / `-q`, `--version`, top-level `--help` / `-h`
-- **Subcommand flags** (must be placed after the subcommand): `--dry-run`, `--preview` / `-p`, subcommand-specific `--help` / `-h`
+- **Subcommand flags** (must be placed after the subcommand): `--dry-run`, `--preview` / `-p` (`generate-image` and `edit-image`), subcommand-specific `--help` / `-h`
 
 Misplaced flags exit non-zero with a clear error. `--help` is mutually exclusive with all other flags and arguments.
 
@@ -73,7 +74,7 @@ All use `Authorization: Key {fal_key}` headers. The `FAL_BASE_URL` environment v
 
 ### Testing
 
-All 54 regression tests run the compiled binary as a subprocess via `os/exec`. The FAL API is intercepted using Go's `httptest.NewServer` -- no real API calls are made during `make test`. The Makefile sets `HOME` to a temp directory to prevent personal config from leaking into tests.
+The regression test suite runs the compiled binary as a subprocess via `os/exec`. The FAL API is intercepted using Go's `httptest.NewServer` -- no real API calls are made during `make test`. The Makefile sets `HOME` to a temp directory to prevent personal config from leaking into tests.
 
 ## Design decisions
 
@@ -93,7 +94,7 @@ Future enhancements, in rough priority order:
 
 | Feature | Description | Complexity |
 |---------|-------------|------------|
-| Reference image / edit mode | Add reference image support to `pix gen-img` via positional args. Uses FAL's `/edit` endpoint with `image_urls` parameter. See [#4](https://github.com/tadg-paul/pix/issues/4). | Medium |
+| Reference image / edit mode | Add reference image support to `pix generate-image` via positional args. Uses FAL's `/edit` endpoint with `image_urls` parameter. See [#4](https://github.com/tadg-paul/pix/issues/4). | Medium |
 | `--model` flag | Override `config.yaml` model per invocation. Enables comparing models. | Small |
 | Image dimensions | Support `--aspect-ratio` or `--size` presets. FAL API accepts `aspect_ratio` ("1:1", "16:9") and `resolution` ("1k", "2k"). | Small |
 | Homebrew formula | Cross-compiled binaries for Darwin/Linux/Windows. `make release` with GitHub releases. See [#3](https://github.com/tadg-paul/pix/issues/3). | Medium |

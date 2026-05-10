@@ -1,4 +1,4 @@
-<!-- Version: 0.3 | Last updated: 2026-05-10 -->
+<!-- Version: 0.4 | Last updated: 2026-05-10 -->
 
 # Vision
 
@@ -11,8 +11,9 @@ A useful CLI (and maybe GUI) to let you create and edit images using generative 
 `pix` is a minimal CLI tool that interacts with the [FAL API](https://fal.ai) for image-related operations. It is built around subcommands so that distinct operations remain discoverable and individually testable as the tool grows.
 
 ```bash
-echo "a sunset over Dublin Bay" | pix gen-img sunset
-cat description.txt | pix gen-img --preview poster
+echo "a sunset over Dublin Bay" | pix generate-image sunset
+cat description.txt | pix generate-image --preview poster
+echo "make it dramatic" | pix edit-image photo.jpg dramatic.jpg
 pix cost
 ```
 
@@ -32,9 +33,15 @@ pix cost
 
 ## Subcommands
 
-### `pix gen-img <output>`
+### `pix generate-image <output>`
 
-Reads a text prompt from stdin and generates an image via the FAL API. Writes the result to `<output>` (extension optional -- if omitted, the API response format is used).
+Reads a text prompt from stdin and generates a new image via the FAL API. Writes the result to `<output>` (extension optional -- if omitted, the API response format is used). Alias: `gen-img`.
+
+`generate-image` also accepts reference images: if earlier positional arguments exist as image files (max 3), they are sent to the FAL edit endpoint just as `edit-image` does. This means muscle memory like `pix gen-img photo.jpg edited` continues to work; users who want explicit edit semantics with required-reference enforcement should reach for `edit-image`.
+
+### `pix edit-image <refs...> <output>`
+
+The explicit edit workflow. Identical pipeline to `generate-image` but requires at least one reference image -- the command errors if none is supplied. The naming and help text mirror the FAL sandbox so users transitioning from the FAL playground find a familiar entry point.
 
 ### `pix cost`
 
@@ -44,7 +51,7 @@ Queries pricing for the configured model without generating an image. Reports bo
 
 **Global flags** (placed before the subcommand): `--quiet` / `-q`, `--version`, `--help` / `-h` (top-level).
 
-**Subcommand flags** (placed after the subcommand): `--dry-run`, `--preview` / `-p` (gen-img only), `--help` / `-h` (subcommand-specific).
+**Subcommand flags** (placed after the subcommand): `--dry-run`, `--preview` / `-p` (`generate-image` and `edit-image`), `--help` / `-h` (subcommand-specific).
 
 `--help` is mutually exclusive with all other flags and arguments.
 

@@ -1,4 +1,4 @@
-// ABOUTME: gen-img subcommand handler -- generates or edits images via the FAL API.
+// ABOUTME: generate-image / edit-image subcommand handler -- generates or edits images via the FAL API.
 // ABOUTME: Reads prompt from stdin, writes image to specified output path. Supports reference images.
 
 package main
@@ -20,16 +20,28 @@ import (
 
 const maxRefImages = 3
 
-func printGenImgUsage() {
-	fmt.Fprintln(os.Stderr, "Usage: pix generate-image [flags] [reference-images...] <output-file>")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Alias: gen-img")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Reads a text prompt from stdin and generates an image via the FAL API.")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "If earlier positional arguments are existing image files, they are sent")
-	fmt.Fprintln(os.Stderr, "as references to the model's edit endpoint (max 3). The last positional")
-	fmt.Fprintln(os.Stderr, "is always the target output filename.")
+func printGenImgUsage(subcommandName string) {
+	if subcommandName == "edit-image" {
+		fmt.Fprintln(os.Stderr, "Usage: pix edit-image [flags] <reference-image> [<reference-image>...] <output-file>")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Edit one or more existing images using a text prompt.")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Reads a text prompt from stdin and sends it to the FAL API along with")
+		fmt.Fprintln(os.Stderr, "the provided reference images. Writes the edited result to <output-file>.")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "At least one reference image is required (max 3). The last positional")
+		fmt.Fprintln(os.Stderr, "is the output filename.")
+	} else {
+		fmt.Fprintln(os.Stderr, "Usage: pix generate-image [flags] [reference-images...] <output-file>")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Alias: gen-img")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Reads a text prompt from stdin and generates an image via the FAL API.")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "If earlier positional arguments are existing image files, they are sent")
+		fmt.Fprintln(os.Stderr, "as references to the model's edit endpoint (max 3). The last positional")
+		fmt.Fprintln(os.Stderr, "is always the target output filename.")
+	}
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Flags:")
 	fmt.Fprintln(os.Stderr, "  -h, --help       Show this help message")
@@ -40,9 +52,13 @@ func printGenImgUsage() {
 	fmt.Fprintln(os.Stderr, "  -q, --quiet      Suppress non-error output")
 }
 
-// runGenImg handles the gen-img subcommand. globalQuiet is the value of the
-// global --quiet flag parsed before the subcommand.
-func runGenImg(args []string, globalQuiet bool) int {
+// runGenImg handles the generate-image and edit-image subcommands. globalQuiet
+// is the value of the global --quiet flag parsed before the subcommand.
+// subcommandName is the name the user typed (e.g. "generate-image", "gen-img",
+// "edit-image"); it controls help text and whether reference images are
+// required.
+func runGenImg(args []string, globalQuiet bool, subcommandName string) int {
+	requireRefs := subcommandName == "edit-image"
 	dryRun := false
 	preview := false
 	helpRequested := false
@@ -58,12 +74,12 @@ func runGenImg(args []string, globalQuiet bool) int {
 			preview = true
 		case "-q", "--quiet":
 			fmt.Fprintln(os.Stderr, "Error: --quiet is a global flag and must be placed before the subcommand")
-			fmt.Fprintln(os.Stderr, "       (try: pix --quiet gen-img ...)")
+			fmt.Fprintf(os.Stderr, "       (try: pix --quiet %s ...)\n", subcommandName)
 			return 2
 		default:
 			if strings.HasPrefix(arg, "-") {
 				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", arg)
-				printGenImgUsage()
+				printGenImgUsage(subcommandName)
 				return 2
 			}
 			positionals = append(positionals, arg)
@@ -75,15 +91,15 @@ func runGenImg(args []string, globalQuiet bool) int {
 		hasOther := dryRun || preview || len(positionals) > 0
 		if hasOther {
 			fmt.Fprintln(os.Stderr, "Error: --help cannot be combined with other flags or arguments")
-			printGenImgUsage()
+			printGenImgUsage(subcommandName)
 			return 2
 		}
-		printGenImgUsage()
+		printGenImgUsage(subcommandName)
 		return 0
 	}
 
 	if len(positionals) == 0 {
-		printGenImgUsage()
+		printGenImgUsage(subcommandName)
 		return 2
 	}
 
@@ -95,6 +111,13 @@ func runGenImg(args []string, globalQuiet bool) int {
 	// Last positional is target; earlier ones are reference images.
 	outputPath := positionals[len(positionals)-1]
 	refs := positionals[:len(positionals)-1]
+
+	if requireRefs && len(refs) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: edit-image requires at least one reference image")
+		fmt.Fprintln(os.Stderr, "       (the last positional is the output file; earlier positionals are reference images)")
+		printGenImgUsage(subcommandName)
+		return 2
+	}
 
 	if len(refs) > maxRefImages {
 		fmt.Fprintf(os.Stderr, "Error: maximum %d reference images supported (got %d)\n", maxRefImages, len(refs))
