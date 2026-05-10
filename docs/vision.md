@@ -2,7 +2,11 @@
 
 # Vision
 
-## Overview
+## The Holy Grail
+
+A useful cli and maybe gui to let you create and edit images, using generateive AI models, that will run locally on your device. Dream on.
+
+## And back down to earth ...
 
 `generate-image` is a minimal CLI tool that generates images from text prompts via the [FAL API](https://fal.ai). It reads a prompt from stdin, sends it to a configurable model, and writes the resulting image to disk.
 
