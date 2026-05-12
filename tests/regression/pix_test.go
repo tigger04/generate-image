@@ -3337,3 +3337,77 @@ func TestModelPicker_image_to_image_with_refs_RT10_12(t *testing.T) {
 		t.Errorf("Expected category=image-to-image when refs present, got URL: %q", capturedURL)
 	}
 }
+
+// RT-10.13: model-picker.always:true is silently bypassed when stdin is piped (non-TTY).
+// User action: `echo "a cat" | pix gen out.png` with model-picker.always:true.
+// User observes: image generated using cfg.Model; no picker fires; no error.
+func TestModelPicker_always_bypassed_when_piped_RT10_13(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnvWithConfig(t, bin, "FAL_KEY=test\n",
+		modelPickerConfigYAML("fal-ai/grok-2-aurora", pickFirst, true))
+
+	var generatePath string
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPIWithModels(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			generatePath = r.URL.Path
+			resp := map[string]interface{}{
+				"images": []map[string]interface{}{{"url": imageServer.URL + "/img.png"}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		}, nil,
+		func(w http.ResponseWriter, r *http.Request) {
+			// Should not be called when stdin is piped.
+			t.Errorf("Did not expect /v1/models to be called when stdin is piped")
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(fakeModelsResponse([]string{"fal-ai/should-not-fire"}, "text-to-image")))
+		})
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	// No PIX_TEST_TTY env -> stdin treated as non-TTY pipe.
+	_, stderr, exitCode := runBinary(t, binPath, []string{"gen", outFile}, "a cat",
+		[]string{"FAL_BASE_URL=" + server.URL})
+
+	if exitCode != 0 {
+		t.Fatalf("Expected exit 0 with piped stdin bypassing always:true picker, got %d; stderr: %s", exitCode, stderr)
+	}
+	if !strings.Contains(generatePath, "grok-2-aurora") {
+		t.Errorf("Expected cfg.Model 'grok-2-aurora' to be used when piped, got generation path: %q", generatePath)
+	}
+}
+
+// RT-10.14: explicit --pick-model with piped stdin is silently bypassed; cfg.Model used; no error.
+// User action: `echo "a cat" | pix gen --pick-model out.png`.
+// User observes: image generated with cfg.Model; picker not fired; no TTY error.
+func TestModelPicker_explicit_flag_bypassed_when_piped_RT10_14(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnvWithConfig(t, bin, "FAL_KEY=test\n",
+		modelPickerConfigYAML("fal-ai/grok-2-aurora", pickFirst, false))
+
+	var generatePath string
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPIWithModels(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			generatePath = r.URL.Path
+			resp := map[string]interface{}{
+				"images": []map[string]interface{}{{"url": imageServer.URL + "/img.png"}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		}, nil,
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Errorf("Did not expect /v1/models to be called for piped --pick-model")
+		})
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	_, stderr, exitCode := runBinary(t, binPath, []string{"gen", "--pick-model", outFile}, "a cat",
+		[]string{"FAL_BASE_URL=" + server.URL})
+
+	if exitCode != 0 {
+		t.Fatalf("Expected exit 0 with piped stdin + --pick-model (silent bypass), got %d; stderr: %s", exitCode, stderr)
+	}
+	if !strings.Contains(generatePath, "grok-2-aurora") {
+		t.Errorf("Expected cfg.Model when piped + --pick-model, got generation path: %q", generatePath)
+	}
+}

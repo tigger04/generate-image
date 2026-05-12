@@ -180,11 +180,9 @@ func runGenImg(args []string, globalQuiet bool, subcommandName string) int {
 	// /v1/models catalogue and use the selected endpoint_id as-is.
 	usePickModel := !noPickModelFlag && (pickModelFlag || cfg.ModelPicker.Always)
 	pickedEndpoint := ""
-	if usePickModel {
-		if !isStdinTTY() {
-			fmt.Fprintln(os.Stderr, "Error: --pick-model requires an interactive terminal")
-			return 2
-		}
+	if usePickModel && isStdinTTY() {
+		// Picker only runs in an interactive terminal. Piped/redirected stdin
+		// silently bypasses the picker; cfg.Model is used.
 		ep, cancelled, err := runModelPickerFlow(cfg, falKey, len(refs) > 0)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
