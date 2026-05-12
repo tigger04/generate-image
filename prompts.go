@@ -27,10 +27,7 @@ func runLoadPromptFlow(cfg *config, globalQuiet bool) (*loadPromptResult, error)
 		return nil, fmt.Errorf("load-prompt.path is not configured in config.yaml")
 	}
 
-	picker := lp.Picker
-	if picker == "" {
-		picker = "fzf"
-	}
+	picker := effectivePicker(cfg)
 
 	fields := strings.Fields(picker)
 	if len(fields) == 0 {

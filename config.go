@@ -20,15 +20,33 @@ type apiKeyConfig struct {
 
 type loadPromptConfig struct {
 	Path   string `yaml:"path"`
-	Picker string `yaml:"picker"`
+	Picker string `yaml:"picker"` // deprecated -- use top-level `picker:` instead; kept so old configs still parse
 	Always bool   `yaml:"always"`
+}
+
+type modelPickerConfig struct {
+	Always bool `yaml:"always"`
 }
 
 type config struct {
 	Model          string                  `yaml:"model"`
 	APIKeys        map[string]apiKeyConfig `yaml:"api-keys"`
 	PreviewCommand string                  `yaml:"preview-command"`
+	Picker         string                  `yaml:"picker"` // top-level: shared by load-prompt and model-pick (default "fzf")
 	LoadPrompt     loadPromptConfig        `yaml:"load-prompt"`
+	ModelPicker    modelPickerConfig       `yaml:"model-picker"`
+}
+
+// effectivePicker returns the picker command to use, preferring the top-level
+// `picker:` key, then the (deprecated) `load-prompt.picker`, then the default `fzf`.
+func effectivePicker(cfg *config) string {
+	if cfg.Picker != "" {
+		return cfg.Picker
+	}
+	if cfg.LoadPrompt.Picker != "" {
+		return cfg.LoadPrompt.Picker
+	}
+	return "fzf"
 }
 
 // loadConfig reads config.yaml.

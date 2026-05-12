@@ -37,6 +37,8 @@ func printGenImgUsage(subcommandName string) {
 	fmt.Fprintln(os.Stderr, "  -p, --preview       Open the image after generation")
 	fmt.Fprintln(os.Stderr, "  --load-prompt       Pick a saved prompt via fzf (or configured picker)")
 	fmt.Fprintln(os.Stderr, "  --no-load-prompt    Disable load-prompt mode for this invocation")
+	fmt.Fprintln(os.Stderr, "  --pick-model        Pick a FAL model from the catalogue via the picker")
+	fmt.Fprintln(os.Stderr, "  --no-pick-model     Disable model-picker mode for this invocation")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Global flags (place before subcommand):")
 	fmt.Fprintln(os.Stderr, "  -q, --quiet         Suppress non-error output")
@@ -52,6 +54,8 @@ func runGenImg(args []string, globalQuiet bool, subcommandName string) int {
 	helpRequested := false
 	loadPromptFlag := false
 	noLoadPromptFlag := false
+	pickModelFlag := false
+	noPickModelFlag := false
 	var positionals []string
 
 	for _, arg := range args {
@@ -66,6 +70,10 @@ func runGenImg(args []string, globalQuiet bool, subcommandName string) int {
 			loadPromptFlag = true
 		case "--no-load-prompt":
 			noLoadPromptFlag = true
+		case "--pick-model":
+			pickModelFlag = true
+		case "--no-pick-model":
+			noPickModelFlag = true
 		case "-q", "--quiet":
 			fmt.Fprintln(os.Stderr, "Error: --quiet is a global flag and must be placed before the subcommand")
 			fmt.Fprintf(os.Stderr, "       (try: pix --quiet %s ...)\n", subcommandName)
@@ -82,7 +90,7 @@ func runGenImg(args []string, globalQuiet bool, subcommandName string) int {
 
 	// --help is mutually exclusive with all other args/flags.
 	if helpRequested {
-		hasOther := dryRun || preview || loadPromptFlag || noLoadPromptFlag || len(positionals) > 0
+		hasOther := dryRun || preview || loadPromptFlag || noLoadPromptFlag || pickModelFlag || noPickModelFlag || len(positionals) > 0
 		if hasOther {
 			fmt.Fprintln(os.Stderr, "Error: --help cannot be combined with other flags or arguments")
 			printGenImgUsage(subcommandName)
@@ -166,11 +174,39 @@ func runGenImg(args []string, globalQuiet bool, subcommandName string) int {
 
 	baseURL := falBaseURL()
 
+	// Resolve which model endpoint to call. By default, use cfg.Model with
+	// the existing /edit suffix when refs are present. If --pick-model (or
+	// model-picker.always) is active, prompt the user to select from FAL's
+	// /v1/models catalogue and use the selected endpoint_id as-is.
+	usePickModel := !noPickModelFlag && (pickModelFlag || cfg.ModelPicker.Always)
+	pickedEndpoint := ""
+	if usePickModel {
+		if !isStdinTTY() {
+			fmt.Fprintln(os.Stderr, "Error: --pick-model requires an interactive terminal")
+			return 2
+		}
+		ep, cancelled, err := runModelPickerFlow(cfg, falKey, len(refs) > 0)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		if cancelled {
+			return 0
+		}
+		pickedEndpoint = ep
+	}
+
 	// Build endpoint and payload depending on whether refs are present.
 	endpoint := cfg.Model
+	if pickedEndpoint != "" {
+		endpoint = pickedEndpoint
+	}
 	payload := map[string]interface{}{"prompt": prompt}
 	if len(refs) > 0 {
-		endpoint = cfg.Model + "/edit"
+		if pickedEndpoint == "" {
+			// Default behaviour for cfg.Model: append /edit suffix when refs present.
+			endpoint = cfg.Model + "/edit"
+		}
 		uris := make([]string, 0, len(refs))
 		for _, ref := range refs {
 			uri, err := refToDataURI(ref)
