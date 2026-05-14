@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -17,10 +19,14 @@ import (
 type modelEntry struct {
 	EndpointID string `json:"endpoint_id"`
 	Metadata   struct {
-		DisplayName string `json:"display_name"`
-		Description string `json:"description"`
-		Category    string `json:"category"`
-		Status      string `json:"status"`
+		DisplayName string   `json:"display_name"`
+		Description string   `json:"description"`
+		Category    string   `json:"category"`
+		Status      string   `json:"status"`
+		Tags        []string `json:"tags"`
+		ModelURL    string   `json:"model_url"`
+		LicenseType string   `json:"license_type"`
+		UpdatedAt   string   `json:"updated_at"`
 	} `json:"metadata"`
 }
 
@@ -60,21 +66,30 @@ func runModelPickerFlow(cfg *config, falKey string, hasRefs bool) (string, bool,
 		return "", false, fmt.Errorf("FAL /v1/models returned no models for category=%s", category)
 	}
 
+	// Each candidate line is just the endpoint_id -- a clean list, easy to scan
+	// and search. Model metadata is written to per-model files in a tempdir, so
+	// fzf's preview pane can show prettified details for whichever line the user
+	// is currently highlighting (preview command is `cat <tempdir>/{}.md`).
+	tempDir, err := os.MkdirTemp("", "pix-model-info-")
+	if err != nil {
+		return "", false, fmt.Errorf("creating model-info tempdir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
 	candidates := make([]string, 0, len(models))
 	for _, m := range models {
-		line := m.EndpointID
-		if m.Metadata.DisplayName != "" {
-			line += "\t" + m.Metadata.DisplayName
+		candidates = append(candidates, m.EndpointID)
+		if err := writeModelDetails(tempDir, m); err != nil {
+			return "", false, fmt.Errorf("writing model details: %w", err)
 		}
-		if m.Metadata.Description != "" {
-			line += "\t" + m.Metadata.Description
-		}
-		candidates = append(candidates, line)
 	}
 
-	headerText := "Select a FAL model (" + category + ")"
+	headerArg := "--header='Select a FAL model (" + category + ")'"
+	previewArg := "--preview='cat " + tempDir + "/{}.md'"
 	selected, cancelled, err := invokePicker(picker, candidates,
-		"--header="+headerText,
+		headerArg,
+		previewArg,
+		"--preview-window=right:60%:wrap",
 	)
 	if err != nil {
 		return "", false, err
@@ -83,12 +98,51 @@ func runModelPickerFlow(cfg *config, falKey string, hasRefs bool) (string, bool,
 		return "", true, nil
 	}
 
-	endpointID := strings.SplitN(selected, "\t", 2)[0]
-	endpointID = strings.TrimSpace(endpointID)
+	endpointID := strings.TrimSpace(selected)
 	if endpointID == "" {
 		return "", true, nil
 	}
 	return endpointID, false, nil
+}
+
+// writeModelDetails writes a prettified markdown file describing the model
+// at <tempDir>/<endpoint_id>.md, creating intermediate directories as needed
+// (endpoint_id contains slashes, e.g. fal-ai/flux/dev).
+func writeModelDetails(tempDir string, m modelEntry) error {
+	path := filepath.Join(tempDir, m.EndpointID+".md")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	var sb strings.Builder
+	if m.Metadata.DisplayName != "" {
+		sb.WriteString(m.Metadata.DisplayName + "\n")
+		sb.WriteString(strings.Repeat("-", len(m.Metadata.DisplayName)) + "\n\n")
+	}
+	sb.WriteString("ID:       " + m.EndpointID + "\n")
+	if m.Metadata.Category != "" {
+		sb.WriteString("Category: " + m.Metadata.Category + "\n")
+	}
+	if len(m.Metadata.Tags) > 0 {
+		sb.WriteString("Tags:     " + strings.Join(m.Metadata.Tags, ", ") + "\n")
+	}
+	if m.Metadata.LicenseType != "" {
+		sb.WriteString("Licence:  " + m.Metadata.LicenseType + "\n")
+	}
+	if m.Metadata.UpdatedAt != "" {
+		sb.WriteString("Updated:  " + m.Metadata.UpdatedAt + "\n")
+	}
+	if m.Metadata.Description != "" {
+		sb.WriteString("\n" + m.Metadata.Description + "\n")
+	}
+	// Plain URL -- iTerm2 / Terminal.app auto-linkify, no OSC 8 needed.
+	if m.Metadata.ModelURL != "" {
+		sb.WriteString("\nDocs: " + m.Metadata.ModelURL + "\n")
+	} else {
+		sb.WriteString("\nDocs: https://fal.ai/models/" + m.EndpointID + "\n")
+	}
+
+	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
 
 // fetchModels queries FAL's /v1/models endpoint for active models in the given category.

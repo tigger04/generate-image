@@ -55,9 +55,17 @@ func runLoadPromptFlow(cfg *config, globalQuiet bool) (*loadPromptResult, error)
 		return nil, fmt.Errorf("load-prompt directory %s contains no prompt files (empty)", lp.Path)
 	}
 
+	// Display basename only -- the full path is ugly in the list and hard to scan.
+	// Trick: set delimiter to '/' and ask fzf to display only the last field
+	// (--with-nth=-1). fzf's {} placeholder in --preview still resolves to the
+	// whole line (the full path), so `cat {}` previews the file correctly.
+	// --preview-window=wrap so long prompts don't get truncated on the right edge.
 	selected, cancelled, err := invokePicker(picker, files,
-		`--header=Select a saved prompt`,
-		`--preview=cat {}`,
+		`--header='Select a saved prompt'`,
+		`--delimiter=/`,
+		`--with-nth=-1`,
+		`--preview='cat {}'`,
+		`--preview-window=right:60%:wrap`,
 	)
 	if err != nil {
 		return nil, err
@@ -93,6 +101,10 @@ func runLoadPromptFlow(cfg *config, globalQuiet bool) (*loadPromptResult, error)
 	return &loadPromptResult{Prompt: final}, nil
 }
 
+// listPromptFiles walks the load-prompt directory recursively and returns
+// absolute paths to every regular file with a .md extension, sorted.
+// Other files (.DS_Store, .txt drafts, images, etc.) are skipped so the picker
+// only surfaces actual prompt sources.
 func listPromptFiles(dir string) ([]string, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -101,15 +113,30 @@ func listPromptFiles(dir string) ([]string, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("load-prompt.path %s is not a directory", dir)
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("reading load-prompt directory %s: %w", dir, err)
-	}
+
 	var files []string
-	for _, e := range entries {
-		if e.Type().IsRegular() {
-			files = append(files, filepath.Join(dir, e.Name()))
+	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
+		if d.IsDir() {
+			// Skip hidden directories (e.g. .git) to avoid surprises.
+			if path != dir && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		if strings.ToLower(filepath.Ext(path)) != ".md" {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walking load-prompt directory %s: %w", dir, err)
 	}
 	sort.Strings(files)
 	return files, nil
@@ -117,23 +144,19 @@ func listPromptFiles(dir string) ([]string, error) {
 
 // invokePicker runs the configured picker with the given candidates on stdin.
 // If extraFzfOpts is non-empty and the picker's first token is "fzf", those
-// options are prepended to the FZF_DEFAULT_OPTS env var for that invocation,
-// so user-set FZF_DEFAULT_OPTS still win (fzf takes the last duplicate).
+// options are appended to the picker command line. Each opt must be a single
+// shell token (callers single-quote any value containing whitespace -- sh -c
+// parses the full command, then fzf sees properly tokenised args).
 func invokePicker(pickerCmd string, candidates []string, extraFzfOpts ...string) (string, bool, error) {
-	cmd := exec.Command("sh", "-c", pickerCmd)
+	finalCmd := pickerCmd
+	if len(extraFzfOpts) > 0 && pickerFirstToken(pickerCmd) == "fzf" {
+		finalCmd = pickerCmd + " " + strings.Join(extraFzfOpts, " ")
+	}
+
+	cmd := exec.Command("sh", "-c", finalCmd)
 	cmd.Stderr = os.Stderr
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-
-	if len(extraFzfOpts) > 0 && pickerFirstToken(pickerCmd) == "fzf" {
-		joined := strings.Join(extraFzfOpts, " ")
-		userOpts := os.Getenv("FZF_DEFAULT_OPTS")
-		combined := joined
-		if userOpts != "" {
-			combined = joined + " " + userOpts
-		}
-		cmd.Env = append(os.Environ(), "FZF_DEFAULT_OPTS="+combined)
-	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
