@@ -4213,3 +4213,111 @@ func TestInteractive_legacy_loadprompt_filter_ignored_RT12_13(t *testing.T) {
 		t.Errorf("expected legacy load-prompt.filter to be ignored; got argv: %q", string(logged))
 	}
 }
+
+// --- model-picker.preselect regex (issue #14) ---
+
+// RT-14.1: preselect with a literal-substring pattern matches a longer endpoint id.
+// User config preselect "xai/grok-imagine-image" matches FAL's "xai/grok-imagine-image/edit".
+func TestInteractive_preselect_regex_substring_RT14_1(t *testing.T) {
+	bin := buildBinary(t)
+	binDir, stdinLog := fzfStdinLoggerDir(t)
+
+	cfg := "model: fal-ai/grok-2-aurora\ninteractive:\n  picker: fzf\n" +
+		"  model-picker:\n    preselect: xai/grok-imagine-image\n"
+	binPath := setupEnvWithConfig(t, bin, "FAL_KEY=test\n", cfg)
+
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPIWithModels(t,
+		successHandler(t, imageServer, nil), nil,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(fakeModelsResponse([]string{
+				"fal-ai/aaa", "xai/grok-imagine-image/edit", "fal-ai/zzz",
+			}, "text-to-image")))
+		})
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	runBinary(t, binPath, []string{"gen", "--pick-model", outFile}, "a prompt",
+		ttyEnv("FAL_BASE_URL="+server.URL, "PATH="+binDir+":/usr/bin:/bin"))
+
+	candidates, err := os.ReadFile(stdinLog)
+	if err != nil {
+		t.Fatalf("read stdin log: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(candidates), "\n"), "\n")
+	if len(lines) == 0 || lines[0] != "xai/grok-imagine-image/edit" {
+		t.Errorf("expected first candidate 'xai/grok-imagine-image/edit', got: %q (all: %v)", lines[0], lines)
+	}
+}
+
+// RT-14.2: preselect anchored regex matches the first vendor-prefixed entry.
+func TestInteractive_preselect_regex_anchored_RT14_2(t *testing.T) {
+	bin := buildBinary(t)
+	binDir, stdinLog := fzfStdinLoggerDir(t)
+
+	cfg := "model: fal-ai/grok-2-aurora\ninteractive:\n  picker: fzf\n" +
+		"  model-picker:\n    preselect: ^xai/.*\n"
+	binPath := setupEnvWithConfig(t, bin, "FAL_KEY=test\n", cfg)
+
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPIWithModels(t,
+		successHandler(t, imageServer, nil), nil,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(fakeModelsResponse([]string{
+				"fal-ai/aaa", "xai/grok-imagine-image/edit", "xai/other-model",
+			}, "text-to-image")))
+		})
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	runBinary(t, binPath, []string{"gen", "--pick-model", outFile}, "a prompt",
+		ttyEnv("FAL_BASE_URL="+server.URL, "PATH="+binDir+":/usr/bin:/bin"))
+
+	candidates, err := os.ReadFile(stdinLog)
+	if err != nil {
+		t.Fatalf("read stdin log: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(candidates), "\n"), "\n")
+	if len(lines) == 0 || lines[0] != "xai/grok-imagine-image/edit" {
+		t.Errorf("expected first match of ^xai/ to be 'xai/grok-imagine-image/edit', got: %q (all: %v)", lines[0], lines)
+	}
+}
+
+// RT-14.3: invalid regex logs a stderr warning and proceeds with default order.
+func TestInteractive_preselect_regex_invalid_RT14_3(t *testing.T) {
+	bin := buildBinary(t)
+	binDir, stdinLog := fzfStdinLoggerDir(t)
+
+	// '[' is an unmatched character class -- regexp.Compile will error.
+	cfg := "model: fal-ai/grok-2-aurora\ninteractive:\n  picker: fzf\n" +
+		"  model-picker:\n    preselect: \"[invalid\"\n"
+	binPath := setupEnvWithConfig(t, bin, "FAL_KEY=test\n", cfg)
+
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPIWithModels(t,
+		successHandler(t, imageServer, nil), nil,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(fakeModelsResponse([]string{
+				"fal-ai/aaa", "fal-ai/bbb", "fal-ai/ccc",
+			}, "text-to-image")))
+		})
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	_, stderr, _ := runBinary(t, binPath, []string{"gen", "--pick-model", outFile}, "a prompt",
+		ttyEnv("FAL_BASE_URL="+server.URL, "PATH="+binDir+":/usr/bin:/bin"))
+
+	// Default order preserved.
+	candidates, err := os.ReadFile(stdinLog)
+	if err != nil {
+		t.Fatalf("read stdin log: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(candidates), "\n"), "\n")
+	if len(lines) == 0 || lines[0] != "fal-ai/aaa" {
+		t.Errorf("expected default order first 'fal-ai/aaa' on invalid regex, got: %q (all: %v)", lines[0], lines)
+	}
+	// Warning was emitted.
+	if !strings.Contains(strings.ToLower(stderr), "not a valid regex") {
+		t.Errorf("expected stderr warning about invalid regex, got: %q", stderr)
+	}
+}

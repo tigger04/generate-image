@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -155,15 +156,21 @@ func writeModelDetails(tempDir string, m modelEntry) error {
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
 
-// reorderPreselect moves the entry whose EndpointID matches preselect to the
-// front of the slice. If preselect is empty or no entry matches, returns the
-// slice unchanged. Stable for the remaining entries.
+// reorderPreselect moves the first entry whose EndpointID is matched by the
+// preselect regex to the front of the slice. If preselect is empty, no entry
+// matches, or the regex fails to compile, the slice is returned unchanged
+// (with a stderr warning on compile failure). Stable for the remaining entries.
 func reorderPreselect(models []modelEntry, preselect string) []modelEntry {
 	if preselect == "" {
 		return models
 	}
+	re, err := regexp.Compile(preselect)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: model-picker.preselect %q is not a valid regex: %v (proceeding without preselect)\n", preselect, err)
+		return models
+	}
 	for i, m := range models {
-		if m.EndpointID == preselect {
+		if re.MatchString(m.EndpointID) {
 			if i == 0 {
 				return models
 			}
