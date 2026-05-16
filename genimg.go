@@ -196,12 +196,20 @@ func runGenImg(args []string, globalQuiet bool, subcommandName string) int {
 		payload[field] = value
 	}
 
+	// Inject per-family safety defaults. Pix is for private use, so we default
+	// to safety-off wherever the model exposes a knob -- avoids spurious
+	// rejections on innocuous prompts. The resolution uses the SELECTED
+	// endpoint so that --pick-model invocations get the right family's knob.
+	for k, v := range handlerFor(endpoint).SafetyDefaults {
+		payload[k] = v
+	}
+
 	if dryRun {
 		url := fmt.Sprintf("%s/%s", baseURL, endpoint)
 
 		// For dry-run output, replace base64 data with filename references for readability.
-		// Mirrors the live payload's ref-field naming so the preview reflects what
-		// would actually be sent.
+		// Mirrors the live payload's ref-field naming and safety defaults so the
+		// preview reflects what would actually be sent.
 		displayPayload := map[string]interface{}{"prompt": prompt}
 		if len(refs) > 0 {
 			displayURLs := make([]string, 0, len(refs))
@@ -211,6 +219,9 @@ func runGenImg(args []string, globalQuiet bool, subcommandName string) int {
 			handler := handlerFor(endpoint)
 			field, value := handler.refPayload(displayURLs, true /*quiet warn on dry-run*/)
 			displayPayload[field] = value
+		}
+		for k, v := range handlerFor(endpoint).SafetyDefaults {
+			displayPayload[k] = v
 		}
 		pretty, err := json.MarshalIndent(displayPayload, "", "  ")
 		if err != nil {

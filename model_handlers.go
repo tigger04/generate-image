@@ -24,34 +24,87 @@ type modelHandler struct {
 	// "image_url" (singular) sends the first ref as a string value.
 	// "image_urls" (plural, default) sends all refs as an array.
 	RefField string
+
+	// SafetyDefaults: keys/values merged into every request payload for this
+	// family. Pix is for private use; we default to safety-off wherever the
+	// model offers a knob, to avoid spurious rejections (e.g. nano-banana
+	// flagging an aerial sketch because it contains a school). Per-family
+	// values mirror storyboard-gen's StillHandler safety_defaults.
+	SafetyDefaults map[string]interface{}
 }
 
 // modelHandlers is the dispatch table. Order matters: more-specific patterns
 // first; the final entry (empty patterns) is the default that always matches.
 var modelHandlers = []modelHandler{
-	// Kontext family: singular image_url. Storyboard-gen calls these out as a
-	// separate handler class; for pix we encode the difference as a single
-	// declarative entry.
+	// Kontext family: singular image_url, safety_tolerance maxed (storyboard-gen
+	// uses "6"; FAL's documented max).
 	{
-		Patterns: []string{"kontext"},
-		RefField: "image_url",
+		Patterns:       []string{"kontext"},
+		RefField:       "image_url",
+		SafetyDefaults: map[string]interface{}{"safety_tolerance": "6"},
 	},
 
-	// Reve family: also singular image_url (per storyboard-gen).
+	// Reve family: singular image_url. No documented safety knob.
 	{
 		Patterns: []string{"reve"},
 		RefField: "image_url",
 	},
 
-	// Emu 3.5 image: singular image_url (per storyboard-gen EditHandler entry).
+	// Emu 3.5 image: singular image_url. No documented safety knob.
 	{
 		Patterns: []string{"emu-3.5"},
 		RefField: "image_url",
 	},
 
-	// Default: plural image_urls. Covers most flux-2 variants, seedream, qwen,
-	// grok, glm-image, nano-banana, gpt-image-1.5, firered, and anything new
-	// pix hasn't profiled yet.
+	// Flux 2 family (incl. pro / max): safety checker off.
+	{
+		Patterns:       []string{"flux-2"},
+		RefField:       "image_urls",
+		SafetyDefaults: map[string]interface{}{"enable_safety_checker": false},
+	},
+
+	// Seedream (ByteDance): safety checker off.
+	{
+		Patterns:       []string{"seedream"},
+		RefField:       "image_urls",
+		SafetyDefaults: map[string]interface{}{"enable_safety_checker": false},
+	},
+
+	// Hunyuan Image (Tencent): safety checker off.
+	{
+		Patterns:       []string{"hunyuan-image"},
+		RefField:       "image_urls",
+		SafetyDefaults: map[string]interface{}{"enable_safety_checker": false},
+	},
+
+	// Recraft: safety checker off.
+	{
+		Patterns:       []string{"recraft"},
+		RefField:       "image_urls",
+		SafetyDefaults: map[string]interface{}{"enable_safety_checker": false},
+	},
+
+	// Instant Character: safety checker off (per storyboard-gen
+	// InstantCharacterHandler.safety_defaults).
+	{
+		Patterns:       []string{"instant-character"},
+		RefField:       "image_url",
+		SafetyDefaults: map[string]interface{}{"enable_safety_checker": false},
+	},
+
+	// Flux 1.x family (fallback before the catch-all): safety checker off
+	// (per storyboard-gen FluxHandler.safety_defaults). Use a narrow pattern
+	// so this doesn't shadow more specific entries.
+	{
+		Patterns:       []string{"flux-general", "flux-pro/v1", "flux/dev"},
+		RefField:       "image_urls",
+		SafetyDefaults: map[string]interface{}{"enable_safety_checker": false},
+	},
+
+	// Default: plural image_urls, no safety knob assumed. Covers grok,
+	// glm-image, nano-banana, gpt-image-1.5, firered, qwen, ideogram, and
+	// anything new pix hasn't profiled yet. Models with a known but
+	// non-standard safety knob can be promoted to their own entry above.
 	{
 		Patterns: nil, // empty -> always matches; must remain last
 		RefField: "image_urls",

@@ -4976,3 +4976,97 @@ func TestModelRouter_pick_model_bypasses_router_RT18_10(t *testing.T) {
 		t.Errorf("--pick-model selection must not be /edit-suffixed; got: %q", capturedPath)
 	}
 }
+
+// --- Per-family safety defaults (discovery #18) ---
+
+// RT-18.11: kontext family payload includes safety_tolerance: "6".
+func TestModelRouter_kontext_safety_tolerance_RT18_11(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: fal-ai/flux-pro/kontext\n")
+
+	refDir := t.TempDir()
+	refPath := writeRefImage(t, refDir, "ref.png", fakeImagePNG)
+
+	var capturedBody string
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPI(t, successHandler(t, imageServer, &capturedBody), nil)
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	runBinary(t, binPath, []string{"gen", refPath, outFile}, "edit",
+		[]string{"FAL_BASE_URL=" + server.URL})
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(capturedBody), &parsed); err != nil {
+		t.Fatalf("parse body: %v", err)
+	}
+	if got, _ := parsed["safety_tolerance"].(string); got != "6" {
+		t.Errorf("expected safety_tolerance=\"6\" for kontext, got: %v", parsed["safety_tolerance"])
+	}
+}
+
+// RT-18.12: flux-2 / seedream / hunyuan / recraft families send
+// enable_safety_checker: false.
+func TestModelRouter_safety_off_families_RT18_12(t *testing.T) {
+	bin := buildBinary(t)
+
+	cases := []struct {
+		name  string
+		model string
+	}{
+		{"flux-2", "fal-ai/flux-2"},
+		{"seedream", "fal-ai/bytedance/seedream/v4.5/text-to-image"},
+		{"hunyuan-image", "fal-ai/hunyuan-image/v3/text-to-image"},
+		{"recraft", "fal-ai/recraft/v4/text-to-image"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			binPath := setupEnv(t, bin, "test-key", "model: "+tc.model+"\n")
+
+			var capturedBody string
+			imageServer := newImageServer(t, fakeImagePNG, "image/png")
+			server := startFakeAPI(t, successHandler(t, imageServer, &capturedBody), nil)
+
+			outFile := filepath.Join(t.TempDir(), "out.png")
+			runBinary(t, binPath, []string{"gen", outFile}, "a prompt",
+				[]string{"FAL_BASE_URL=" + server.URL})
+
+			var parsed map[string]interface{}
+			if err := json.Unmarshal([]byte(capturedBody), &parsed); err != nil {
+				t.Fatalf("parse body: %v", err)
+			}
+			got, ok := parsed["enable_safety_checker"].(bool)
+			if !ok {
+				t.Errorf("[%s] expected enable_safety_checker key in payload, got: %v", tc.name, parsed)
+			}
+			if got {
+				t.Errorf("[%s] expected enable_safety_checker=false, got true", tc.name)
+			}
+		})
+	}
+}
+
+// RT-18.13: default (no safety knob known) does NOT add any safety field.
+// Asserts grok payload has neither safety_tolerance nor enable_safety_checker.
+func TestModelRouter_default_no_safety_RT18_13(t *testing.T) {
+	bin := buildBinary(t)
+	binPath := setupEnv(t, bin, "test-key", "model: xai/grok-imagine-image\n")
+
+	var capturedBody string
+	imageServer := newImageServer(t, fakeImagePNG, "image/png")
+	server := startFakeAPI(t, successHandler(t, imageServer, &capturedBody), nil)
+
+	outFile := filepath.Join(t.TempDir(), "out.png")
+	runBinary(t, binPath, []string{"gen", outFile}, "a prompt",
+		[]string{"FAL_BASE_URL=" + server.URL})
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(capturedBody), &parsed); err != nil {
+		t.Fatalf("parse body: %v", err)
+	}
+	if _, ok := parsed["safety_tolerance"]; ok {
+		t.Errorf("default family must not set safety_tolerance; got: %v", parsed)
+	}
+	if _, ok := parsed["enable_safety_checker"]; ok {
+		t.Errorf("default family must not set enable_safety_checker; got: %v", parsed)
+	}
+}
