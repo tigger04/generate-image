@@ -36,12 +36,39 @@ type modelHandler struct {
 // modelHandlers is the dispatch table. Order matters: more-specific patterns
 // first; the final entry (empty patterns) is the default that always matches.
 var modelHandlers = []modelHandler{
-	// Kontext family: singular image_url, safety_tolerance maxed (storyboard-gen
-	// uses "6"; FAL's documented max).
+	// Kontext multi (max/multi): plural image_urls. Must come BEFORE the
+	// general kontext rule so the multi variant doesn't get caught by it.
+	// Mirrors storyboard-gen KontextMultiHandler.
+	{
+		Patterns:       []string{"kontext/max/multi"},
+		RefField:       "image_urls",
+		SafetyDefaults: map[string]interface{}{"safety_tolerance": "6"},
+	},
+
+	// Kontext family (single-ref variants): singular image_url, safety_tolerance
+	// maxed. Mirrors storyboard-gen KontextHandler.
 	{
 		Patterns:       []string{"kontext"},
 		RefField:       "image_url",
 		SafetyDefaults: map[string]interface{}{"safety_tolerance": "6"},
+	},
+
+	// Ideogram Character: pix maps its single ref set onto the character
+	// channel (reference_image_urls). The model's separate style-refs channel
+	// (image_urls) is left empty -- pix has no style-refs concept.
+	// Mirrors storyboard-gen IdeogramCharacterHandler._build_ideogram_character_args.
+	{
+		Patterns: []string{"ideogram/character"},
+		RefField: "reference_image_urls",
+	},
+
+	// Flux 1.x specifically with reference_image_url support. Mirrors
+	// storyboard-gen FluxHandler._build_flux_args (only flux-general uses
+	// the reference_image_url field; other flux 1.x variants drop refs).
+	{
+		Patterns:       []string{"flux-general"},
+		RefField:       "reference_image_url",
+		SafetyDefaults: map[string]interface{}{"enable_safety_checker": false},
 	},
 
 	// Reve family: singular image_url. No documented safety knob.
@@ -130,15 +157,20 @@ func handlerFor(model string) modelHandler {
 }
 
 // refPayload assembles the reference-image portion of a FAL request payload
-// according to the handler's RefField setting. For singular ("image_url"),
-// only the first URI is sent; pix warns to stderr when extra refs are
-// dropped (matching storyboard-gen's behaviour).
+// according to the handler's RefField setting. Singular fields ("image_url",
+// "reference_image_url") send the first URI as a string value; plural fields
+// ("image_urls", "reference_image_urls") send all URIs as an array. Singular
+// handlers warn to stderr when extra refs are dropped.
 func (h modelHandler) refPayload(uris []string, globalQuiet bool) (string, interface{}) {
-	if h.RefField == "image_url" {
+	switch h.RefField {
+	case "image_url", "reference_image_url":
 		if len(uris) > 1 && !globalQuiet {
 			fmt.Fprintf(os.Stderr, "Warning: model accepts a single reference image; using the first of %d (others dropped)\n", len(uris))
 		}
-		return "image_url", uris[0]
+		return h.RefField, uris[0]
+	case "reference_image_urls":
+		return h.RefField, uris
+	default:
+		return "image_urls", uris
 	}
-	return "image_urls", uris
 }
